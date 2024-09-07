@@ -1,0 +1,29 @@
+{
+  "canisters": {
+    "environment_volunteer_backend": {
+      "build": "npx azle environment_volunteer_backend",
+      "candid": "src/environment_volunteer_backend/environment_volunteer_backend.did",
+      "gzip": true,
+      "main": "src/environment_volunteer_backend/src/index.ts",
+      "tech_stack": {
+        "cdk": {
+          "azle": {}
+        },
+        "language": {
+          "javascript": {},
+          "typescript": {}
+        }
+      },
+      "type": "custom",
+      "wasm": ".azle/environment_volunteer_backend/environment_volunteer_backend.wasm"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
