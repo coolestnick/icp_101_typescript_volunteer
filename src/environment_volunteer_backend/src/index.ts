@@ -14,259 +14,262 @@ import {
   Variant,
   Vec,
 } from "azle";
+
 //members
-const Memebers = Record({
+const Members = Record({
   name: text,
   location: text,
   specialist: text,
-  regestrationNumber: Principal,
+  registrationNumber: Principal,
 });
 
 //register the group
 const Group = Record({
+  id: nat64,
   name: text,
   country: text,
-  contactnumber: text,
-  groupoficialemail: text,
-  members: Vec(Memebers),
+  contactNumber: text,
+  groupOfficialEmail: text,
+  members: Vec(Members),
   services: text,
   created_at: nat64,
-  id: Principal,
 });
 
 //defines types
 type Group = typeof Group.tsType;
-type Memeber = typeof Memebers.tsType;
+type Member = typeof Members.tsType;
+
 //define payloads
 const groupPayload = Record({
   name: text,
   country: text,
-  contactnumber: text,
-  groupoficialemail: text,
+  contactNumber: text,
+  groupOfficialEmail: text,
   services: text,
 });
+
 const memberPayload = Record({
   name: text,
   location: text,
   specialist: text,
-  nameofgroup: text,
+  nameOfGroup: text,
 });
 
 const searchPayload = Record({
-  nameofgroup: text,
+  nameOfGroup: text,
 });
 
 const memberLeavePayload = Record({
   name: text,
-  regestrationNumber: Principal,
-  groupname: text,
+  registrationNumber: Principal,
+  groupName: text,
 });
-//defines errors
+
+const searchPayloadOnServices = Record({
+  service: text,
+});
+
+const searchPayloadOnLocation = Record({
+  location: text,
+});
+
+// Error variants for better error handling
 const errors = Variant({
   MissingCredentials: text,
   FailedToRegisterGroup: text,
   GroupAlreadyRegistered: text,
-  GroupNotAvailble: text,
+  GroupNotAvailable: text,
   ServicesNotAvailable: text,
   NotAMember: text,
 });
-const searchPayloadOnServices = Record({
-  service: text,
-});
-const searchPayloadOnLocation = Record({
-  location: text,
-});
-//storages
-const groupstorages = StableBTreeMap<text, Group>(0);
-const servicesStorages = StableBTreeMap<text, Group>(1);
-const groupbasedonlocation = StableBTreeMap<text, Group>(2);
+
+// storages
+const groupStorage = StableBTreeMap<text, Group>(0);
+const servicesStorage = StableBTreeMap<text, Group>(1);
+const locationBasedGroupStorage = StableBTreeMap<text, Group>(2);
+
+// Unique ID counter for groups
+let groupIDCounter: nat64 = 1;
+
+// Helper function to generate a unique ID
+function generateGroupID(): nat64 {
+  return groupIDCounter++;
+}
+
+// Helper function to check for missing fields
+function validateGroupPayload(payload: typeof groupPayload.tsType): Result<null, typeof errors> {
+  if (!payload.name || !payload.country || !payload.contactNumber || !payload.groupOfficialEmail || !payload.services) {
+    return Err({
+      MissingCredentials: "Some credentials are missing",
+    });
+  }
+  return Ok(null);
+}
+
+// Helper function to validate member payload
+function validateMemberPayload(payload: typeof memberPayload.tsType): Result<null, typeof errors> {
+  if (!payload.name || !payload.location || !payload.specialist || !payload.nameOfGroup) {
+    return Err({
+      MissingCredentials: "Some member credentials are missing",
+    });
+  }
+  return Ok(null);
+}
+
 export default Canister({
+  // Register a group
   registerGroup: update([groupPayload], Result(text, errors), (payload) => {
-    if (
-      !payload.contactnumber ||
-      !payload.country ||
-      !payload.groupoficialemail ||
-      !payload.name ||
-      !payload.services
-    ) {
+    const validation = validateGroupPayload(payload);
+    if (validation.Err) return validation;
+
+    // Verify that the group is not already registered
+    const existingGroup = groupStorage.get(payload.name).Some;
+    if (existingGroup) {
       return Err({
-        MissingCredentials: "some credentials are missing",
+        GroupAlreadyRegistered: "Group already exists",
       });
     }
 
-    //verify that the group is not already registered
-    const getGroup = groupstorages.get(payload.name).Some;
-    if (getGroup) {
-      return Err({
-        GroupAlreadyRegistered: "group already  exits",
-      });
-    }
-
-    //register the group
-    const new_group: Group = {
+    // Register the group with a unique ID
+    const newGroup: Group = {
+      id: generateGroupID(),
       name: payload.name,
       country: payload.country,
-      contactnumber: payload.contactnumber,
-      groupoficialemail: payload.groupoficialemail,
+      contactNumber: payload.contactNumber,
+      groupOfficialEmail: payload.groupOfficialEmail,
       members: [],
       services: payload.services,
       created_at: ic.time(),
-      id: ic.caller(),
     };
 
-    groupstorages.insert(payload.name, new_group);
-    servicesStorages.insert(payload.services, new_group);
-    groupbasedonlocation.insert(payload.country, new_group);
-    return Ok("group registered successfully");
+    groupStorage.insert(payload.name, newGroup);
+    servicesStorage.insert(payload.services, newGroup);
+    locationBasedGroupStorage.insert(payload.country, newGroup);
+
+    return Ok("Group registered successfully");
   }),
 
-  //get all groups availabel for volunteer
-  getallgroups: query([], Vec(Group), () => {
-    return groupstorages.values();
+  // Get all groups available
+  getAllGroups: query([], Vec(Group), () => {
+    return groupStorage.values();
   }),
 
-  //search for a group by name
-
-  get_a_group: query([searchPayload], Result(Group, errors), (payload) => {
-    //verify payload is available
-    if (!payload.nameofgroup) {
+  // Search for a group by name
+  getGroupByName: query([searchPayload], Result(Group, errors), (payload) => {
+    if (!payload.nameOfGroup) {
       return Err({
-        MissingCredentials: "name of group is required",
-      });
-    }
-    //get group
-    const getgroup = groupstorages.get(payload.nameofgroup).Some;
-    if (!getgroup) {
-      return Err({
-        GroupNotAvailble: `group with name ${payload.nameofgroup} is not available`,
+        MissingCredentials: "Name of group is required",
       });
     }
 
-    return Ok(getgroup);
+    const group = groupStorage.get(payload.nameOfGroup).Some;
+    if (!group) {
+      return Err({
+        GroupNotAvailable: `Group with name ${payload.nameOfGroup} is not available`,
+      });
+    }
+
+    return Ok(group);
   }),
 
-  get_a_group_on_Services_offering: query(
-    [searchPayloadOnServices],
-    Result(Group, errors),
-    (payload) => {
-      //verify payload no empty
-      if (!payload.service) {
-        return Err({
-          MissingCredentials: "some credentials are missing",
-        });
-      }
-
-      const getgroup = servicesStorages.get(payload.service).Some;
-      if (!getgroup) {
-        return Err({
-          GroupNotAvailble: `group offering ${payload.service} not available`,
-        });
-      }
-      return Ok(getgroup);
-    }
-  ),
-
-  //voluteer to the group
-
-  volunteer: query([memberPayload], Result(text, errors), (payload) => {
-    //verify that payload is not empty
-    if (
-      !payload.location ||
-      !payload.name ||
-      !payload.nameofgroup ||
-      !payload.specialist
-    ) {
+  // Search for groups by services offered
+  getGroupByService: query([searchPayloadOnServices], Result(Group, errors), (payload) => {
+    if (!payload.service) {
       return Err({
-        MissingCredentials: "some credentials are missing",
+        MissingCredentials: "Service field is required",
       });
     }
 
-    //check if the group user is requesting to volunter is available
-
-    const getGroup = groupstorages.get(payload.nameofgroup).Some;
-    if (!getGroup) {
+    const group = servicesStorage.get(payload.service).Some;
+    if (!group) {
       return Err({
-        GroupNotAvailble: `group with name ${payload.nameofgroup} is naot available`,
+        GroupNotAvailable: `Group offering ${payload.service} is not available`,
       });
     }
 
-    //check if services user is offereing are availabe
+    return Ok(group);
+  }),
 
-    const getservice = servicesStorages.get(payload.specialist).Some;
-    if (!getservice) {
+  // Volunteer to join a group
+  volunteer: update([memberPayload], Result(text, errors), (payload) => {
+    const validation = validateMemberPayload(payload);
+    if (validation.Err) return validation;
+
+    // Check if the group exists
+    const group = groupStorage.get(payload.nameOfGroup).Some;
+    if (!group) {
       return Err({
-        ServicesNotAvailable: `services you are voluntering are not currently offered by ${payload.nameofgroup}`,
+        GroupNotAvailable: `Group with name ${payload.nameOfGroup} is not available`,
       });
     }
 
-    //new member
-    const new_member: Memeber = {
+    // Check if the services user is offering are available
+    const serviceGroup = servicesStorage.get(payload.specialist).Some;
+    if (!serviceGroup) {
+      return Err({
+        ServicesNotAvailable: `Service '${payload.specialist}' is not offered by ${payload.nameOfGroup}`,
+      });
+    }
+
+    // Add new member
+    const newMember: Member = {
       name: payload.name,
       location: payload.location,
       specialist: payload.specialist,
-      regestrationNumber: ic.caller(),
+      registrationNumber: ic.caller(),
     };
 
-    //update group members
-
-    const updated_group: Group = {
-      ...getGroup,
-      members: [...getGroup.members, new_member],
+    // Update the group with the new member
+    const updatedGroup: Group = {
+      ...group,
+      members: [...group.members, newMember],
     };
 
-    //update services
-    const updatedServices: Group = {
-      ...getGroup,
-      members: [...getGroup.members, new_member],
-    };
-    servicesStorages.insert(payload.specialist, updatedServices);
-    groupstorages.insert(payload.nameofgroup, updated_group);
-    groupbasedonlocation.insert(getGroup.country, updatedServices);
-    return Ok("succeesfully volunteerd");
+    groupStorage.insert(payload.nameOfGroup, updatedGroup);
+    servicesStorage.insert(payload.specialist, updatedGroup);
+    locationBasedGroupStorage.insert(group.country, updatedGroup);
+
+    return Ok("Successfully volunteered");
   }),
 
-  //user leave volunteer group
-  member_leave_group: update(
-    [memberLeavePayload],
-    Result(text, errors),
-    (payload) => {
-      //verify that payload is not empty
-      if (!payload.groupname || !payload.name || !payload.regestrationNumber) {
-        return Err({
-          MissingCredentials: "some credentials are missing",
-        });
-      }
-
-      //check if the group exists
-      const getGroup = groupstorages.get(payload.groupname).Some;
-      if (!getGroup) {
-        return Err({
-          GroupNotAvailble: `group with name ${payload.groupname} is naot available`,
-        });
-      }
-
-      //check if member exists
-      const member_exist = getGroup.members.filter(
-        (val) => val.name == payload.name
-      );
-
-      if (!member_exist) {
-        return Err({
-          NotAMember: `You are not a member of ${payload.groupname}`,
-        });
-      }
-
-      //leave group
-      const updatedgroup: Group = {
-        ...getGroup,
-        members: getGroup.members.filter((val) => payload.name !== val.name),
-      };
-
-      groupstorages.insert(getGroup.name, updatedgroup);
-      servicesStorages.insert(getGroup.services, updatedgroup);
-      groupbasedonlocation.insert(getGroup.country, updatedgroup);
-
-      return Ok("exited group successfully");
+  // Member leaves the group
+  memberLeaveGroup: update([memberLeavePayload], Result(text, errors), (payload) => {
+    if (!payload.groupName || !payload.name || !payload.registrationNumber) {
+      return Err({
+        MissingCredentials: "Some credentials are missing",
+      });
     }
-  ),
+
+    const group = groupStorage.get(payload.groupName).Some;
+    if (!group) {
+      return Err({
+        GroupNotAvailable: `Group with name ${payload.groupName} is not available`,
+      });
+    }
+
+    // Check if member exists in the group
+    const memberExists = group.members.find((m) => m.name === payload.name && m.registrationNumber === payload.registrationNumber);
+    if (!memberExists) {
+      return Err({
+        NotAMember: `You are not a member of ${payload.groupName}`,
+      });
+    }
+
+    // Remove member from the group
+    const updatedGroup: Group = {
+      ...group,
+      members: group.members.filter((m) => m.name !== payload.name),
+    };
+
+    groupStorage.insert(group.name, updatedGroup);
+    servicesStorage.insert(group.services, updatedGroup);
+    locationBasedGroupStorage.insert(group.country, updatedGroup);
+
+    return Ok("Successfully exited the group");
+  }),
+
+  // List all available services across groups
+  listAllServices: query([], Vec(text), () => {
+    return servicesStorage.keys();
+  }),
 });
